@@ -3,115 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PLO Pre-flop GTO Trainer</title>
+    <title>PLO Pre-Flop GTO Trainer</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%); min-height: 100vh; color: white; margin: 0; font-family: sans-serif; }
-        .poker-table { background: radial-gradient(circle, #065f46 0%, #047857 100%); border: 8px solid #78350f; border-radius: 200px; position: relative; width: 100%; max-width: 600px; height: 350px; margin: 20px auto; box-shadow: inset 0 0 50px rgba(0,0,0,0.5); }
+        body { background: #0f172a; color: white; font-family: system-ui, sans-serif; }
+        .playing-card { background: white; color: black; border-radius: 8px; width: 60px; height: 85px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; font-size: 1.4rem; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .table-ring { border: 10px solid #3e2723; border-radius: 200px; background: radial-gradient(circle, #2e7d32 0%, #1b5e20 100%); width: 100%; max-width: 500px; height: 300px; margin: 20px auto; position: relative; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
 
+        // --- לוגיקה מדעית (מהקובץ המקורי שלך) ---
         const ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
         const suits = ['♠', '♥', '♦', '♣'];
-        const suitColors = { '♠': '#000', '♥': '#e53e3e', '♦': '#e53e3e', '♣': '#000' };
+        const suitColors = { '♠': '#000', '♥': '#dc2626', '♦': '#2563eb', '♣': '#16a34a' };
         const positions = ['UTG', 'UTG+1', 'MP', 'CO', 'BTN', 'SB', 'BB'];
-        const positionAngles = { 'BB': 90, 'SB': 135, 'BTN': 180, 'CO': 225, 'MP': 270, 'UTG+1': 315, 'UTG': 0 };
+        const stackDepths = { 'short': 40, 'medium': 100, 'deep': 250 };
 
-        const OmahaTrainer = () => {
+        const calculatePLOEquity = (cards) => {
+            const rankValues = { 'A': 14, 'K': 13, 'Q': 12, 'J': 11, 'T': 10, '9': 9, '8': 8, '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2 };
+            const numValues = cards.map(c => rankValues[c.rank]).sort((a, b) => b - a);
+            let equity = 40;
+            const avgRank = numValues.reduce((a, b) => a + b, 0) / 4;
+            equity += (avgRank - 7) * 2.5;
+            
+            // בדיקת Suitedness
+            const suitCounts = {};
+            cards.forEach(c => suitCounts[c.suit] = (suitCounts[c.suit] || 0) + 1);
+            const maxSuits = Math.max(...Object.values(suitCounts));
+            if (maxSuits === 2) equity += 8; // Double suited potential
+            if (maxSuits === 4) equity -= 5; // Rainbow
+            
+            return Math.round(Math.max(32, Math.min(70, equity)));
+        };
+
+        const App = () => {
             const [gameState, setGameState] = useState({
                 hand: [],
                 pos: 'BTN',
+                stack: 'medium',
                 scen: 'unopened',
-                stack: 100,
                 feedback: null,
                 score: { correct: 0, total: 0 }
             });
 
-            const generateHand = () => {
-                const newHand = [];
+            const newHand = () => {
+                const h = [];
                 const used = new Set();
-                while (newHand.length < 4) {
-                    const r = ranks[Math.floor(Math.random() * ranks.length)];
-                    const s = suits[Math.floor(Math.random() * suits.length)];
-                    if (!used.has(r + s)) {
-                        newHand.push({ rank: r, suit: s });
-                        used.add(r + s);
-                    }
+                while(h.length < 4) {
+                    const r = ranks[Math.floor(Math.random()*ranks.length)];
+                    const s = suits[Math.floor(Math.random()*suits.length)];
+                    if(!used.has(r+s)) { h.push({rank: r, suit: s}); used.add(r+s); }
                 }
                 setGameState(prev => ({
                     ...prev,
-                    hand: newHand,
-                    pos: positions[Math.floor(Math.random() * positions.length)],
+                    hand: h,
+                    pos: positions[Math.floor(Math.random()*positions.length)],
+                    stack: ['short', 'medium', 'deep'][Math.floor(Math.random()*3)],
                     scen: Math.random() > 0.5 ? 'unopened' : 'facing-raise',
                     feedback: null
                 }));
             };
 
-            useEffect(() => { generateHand(); }, []);
+            useEffect(() => { newHand(); }, []);
 
-            const handleAction = (action) => {
-                // לוגיקת החלטה בסיסית (ניתן להרחיב לפי הקוד של קלוד)
-                const isCorrect = true; 
+            const handleAction = (userAction) => {
+                const eq = calculatePLOEquity(gameState.hand);
+                let correctAction = 'Fold';
+                
+                // לוגיקת החלטה מפושטת מבוססת Equity ומיקום (לפי המקור שלך)
+                if (gameState.pos === 'BTN' || gameState.pos === 'CO') {
+                    if (eq > 45) correctAction = 'Raise';
+                } else if (eq > 55) {
+                    correctAction = 'Raise';
+                }
+
+                if (gameState.pos === 'BB' && gameState.scen === 'facing-raise' && eq > 40) {
+                    correctAction = 'Call';
+                }
+
+                const isCorrect = userAction === correctAction;
                 setGameState(prev => ({
                     ...prev,
-                    score: { correct: prev.score.correct + 1, total: prev.score.total + 1 },
-                    feedback: "Correct! Good decision based on GTO ranges."
+                    feedback: { isCorrect, correctAction, eq },
+                    score: { correct: prev.score.correct + (isCorrect ? 1 : 0), total: prev.score.total + 1 }
                 }));
-                setTimeout(generateHand, 2000);
+
+                setTimeout(newHand, 2500);
             };
 
             return (
-                <div className="p-4 max-w-4xl mx-auto">
-                    <header className="text-center mb-6">
-                        <h1 className="text-3xl font-bold text-green-400">PLO GTO Trainer</h1>
-                        <div className="text-xl">Score: {gameState.score.correct}/{gameState.score.total}</div>
-                    </header>
+                <div className="flex flex-col items-center p-4">
+                    <div className="w-full max-w-xl bg-slate-800 rounded-3xl p-6 shadow-2xl border border-slate-700">
+                        <div className="flex justify-between items-center mb-6">
+                            <div className="bg-slate-700 px-4 py-2 rounded-full font-bold">
+                                🏆 {gameState.score.correct} / {gameState.score.total}
+                            </div>
+                            <div className="text-blue-400 font-bold uppercase tracking-widest text-sm">
+                                {gameState.stack.toUpperCase()} ({stackDepths[gameState.stack]}BB)
+                            </div>
+                        </div>
 
-                    <div className="poker-table">
-                        {positions.map(p => {
-                            const angle = positionAngles[p];
-                            const x = 50 + 40 * Math.cos((angle - 90) * Math.PI / 180);
-                            const y = 50 + 40 * Math.sin((angle - 90) * Math.PI / 180);
-                            return (
-                                <div key={p} className={`absolute transform -translate-x-1/2 -translate-y-1/2 p-2 rounded-full border-2 text-xs font-bold ${gameState.pos === p ? 'bg-green-600 border-white' : 'bg-gray-700 border-gray-500'}`}
-                                     style={{ left: `${x}%`, top: `${y}%` }}>
-                                    {p}
-                                </div>
-                            );
-                        })}
-                    </div>
+                        <div className="table-ring flex items-center justify-center">
+                            <div className="text-center">
+                                <div className="text-5xl font-black mb-2">{gameState.pos}</div>
+                                <div className="text-sm opacity-70 italic">{gameState.scen === 'unopened' ? 'Pot is Clean' : 'Facing 3x Raise'}</div>
+                            </div>
+                        </div>
 
-                    <div className="bg-gray-800 p-6 rounded-xl shadow-xl text-center">
-                        <div className="flex justify-center gap-2 mb-4">
+                        <div className="flex justify-center gap-2 -mt-12 mb-10 relative z-10">
                             {gameState.hand.map((c, i) => (
-                                <div key={i} className="bg-white text-black p-2 rounded w-12 h-16 flex flex-col items-center justify-center font-bold text-xl shadow-lg" style={{color: suitColors[c.suit]}}>
-                                    <div>{c.rank}</div>
-                                    <div className="text-2xl">{c.suit}</div>
+                                <div key={i} className="playing-card">
+                                    <span>{c.rank}</span>
+                                    <span style={{ color: suitColors[c.suit] }}>{c.suit}</span>
                                 </div>
                             ))}
                         </div>
-                        
-                        <div className="text-lg mb-4 font-semibold text-blue-300">
-                            Position: {gameState.pos} | Scenario: {gameState.scen}
-                        </div>
 
-                        <div className="flex justify-center gap-4">
-                            <button onClick={() => handleAction('Fold')} className="bg-red-600 hover:bg-red-700 px-8 py-3 rounded-lg font-bold transition">FOLD</button>
-                            <button onClick={() => handleAction('Call')} className="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-bold transition">CALL</button>
-                            <button onClick={() => handleAction('Raise')} className="bg-green-600 hover:bg-green-700 px-8 py-3 rounded-lg font-bold transition">RAISE</button>
-                        </div>
-
-                        {gameState.feedback && (
-                            <div className="mt-4 p-3 bg-green-900 text-green-200 rounded animate-pulse">
-                                {gameState.feedback}
+                        {!gameState.feedback ? (
+                            <div className="grid grid-cols-3 gap-3">
+                                <button onClick={() => handleAction('Fold')} className="bg-red-600 hover:bg-red-500 py-4 rounded-xl font-bold">FOLD</button>
+                                <button onClick={() => handleAction('Call')} className="bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold">CALL</button>
+                                <button onClick={() => handleAction('Raise')} className="bg-green-600 hover:bg-green-500 py-4 rounded-xl font-bold">RAISE</button>
+                            </div>
+                        ) : (
+                            <div className={`p-4 rounded-xl text-center font-bold text-xl animate-bounce ${gameState.feedback.isCorrect ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                {gameState.feedback.isCorrect ? 'נכון מאוד!' : `טעות. עדיף ${gameState.feedback.correctAction}`}
+                                <div className="text-xs mt-1">Hand Equity: {gameState.feedback.eq}%</div>
                             </div>
                         )}
                     </div>
@@ -120,7 +145,7 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<OmahaTrainer />);
+        root.render(<App />);
     </script>
 </body>
 </html>
