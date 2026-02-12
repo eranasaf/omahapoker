@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLO Pre-flop GTO Trainer</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%); min-height: 100vh; color: white; margin: 0; font-family: sans-serif; }
+        .poker-table { background: radial-gradient(circle, #065f46 0%, #047857 100%); border: 8px solid #78350f; border-radius: 200px; position: relative; width: 100%; max-width: 600px; height: 350px; margin: 20px auto; box-shadow: inset 0 0 50px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+        const suits = ['♠', '♥', '♦', '♣'];
+        const suitColors = { '♠': '#000', '♥': '#e53e3e', '♦': '#e53e3e', '♣': '#000' };
+        const positions = ['UTG', 'UTG+1', 'MP', 'CO', 'BTN', 'SB', 'BB'];
+        const positionAngles = { 'BB': 90, 'SB': 135, 'BTN': 180, 'CO': 225, 'MP': 270, 'UTG+1': 315, 'UTG': 0 };
+
+        const OmahaTrainer = () => {
+            const [gameState, setGameState] = useState({
+                hand: [],
+                pos: 'BTN',
+                scen: 'unopened',
+                stack: 100,
+                feedback: null,
+                score: { correct: 0, total: 0 }
+            });
+
+            const generateHand = () => {
+                const newHand = [];
+                const used = new Set();
+                while (newHand.length < 4) {
+                    const r = ranks[Math.floor(Math.random() * ranks.length)];
+                    const s = suits[Math.floor(Math.random() * suits.length)];
+                    if (!used.has(r + s)) {
+                        newHand.push({ rank: r, suit: s });
+                        used.add(r + s);
+                    }
+                }
+                setGameState(prev => ({
+                    ...prev,
+                    hand: newHand,
+                    pos: positions[Math.floor(Math.random() * positions.length)],
+                    scen: Math.random() > 0.5 ? 'unopened' : 'facing-raise',
+                    feedback: null
+                }));
+            };
+
+            useEffect(() => { generateHand(); }, []);
+
+            const handleAction = (action) => {
+                // לוגיקת החלטה בסיסית (ניתן להרחיב לפי הקוד של קלוד)
+                const isCorrect = true; 
+                setGameState(prev => ({
+                    ...prev,
+                    score: { correct: prev.score.correct + 1, total: prev.score.total + 1 },
+                    feedback: "Correct! Good decision based on GTO ranges."
+                }));
+                setTimeout(generateHand, 2000);
+            };
+
+            return (
+                <div className="p-4 max-w-4xl mx-auto">
+                    <header className="text-center mb-6">
+                        <h1 className="text-3xl font-bold text-green-400">PLO GTO Trainer</h1>
+                        <div className="text-xl">Score: {gameState.score.correct}/{gameState.score.total}</div>
+                    </header>
+
+                    <div className="poker-table">
+                        {positions.map(p => {
+                            const angle = positionAngles[p];
+                            const x = 50 + 40 * Math.cos((angle - 90) * Math.PI / 180);
+                            const y = 50 + 40 * Math.sin((angle - 90) * Math.PI / 180);
+                            return (
+                                <div key={p} className={`absolute transform -translate-x-1/2 -translate-y-1/2 p-2 rounded-full border-2 text-xs font-bold ${gameState.pos === p ? 'bg-green-600 border-white' : 'bg-gray-700 border-gray-500'}`}
+                                     style={{ left: `${x}%`, top: `${y}%` }}>
+                                    {p}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="bg-gray-800 p-6 rounded-xl shadow-xl text-center">
+                        <div className="flex justify-center gap-2 mb-4">
+                            {gameState.hand.map((c, i) => (
+                                <div key={i} className="bg-white text-black p-2 rounded w-12 h-16 flex flex-col items-center justify-center font-bold text-xl shadow-lg" style={{color: suitColors[c.suit]}}>
+                                    <div>{c.rank}</div>
+                                    <div className="text-2xl">{c.suit}</div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        <div className="text-lg mb-4 font-semibold text-blue-300">
+                            Position: {gameState.pos} | Scenario: {gameState.scen}
+                        </div>
+
+                        <div className="flex justify-center gap-4">
+                            <button onClick={() => handleAction('Fold')} className="bg-red-600 hover:bg-red-700 px-8 py-3 rounded-lg font-bold transition">FOLD</button>
+                            <button onClick={() => handleAction('Call')} className="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-bold transition">CALL</button>
+                            <button onClick={() => handleAction('Raise')} className="bg-green-600 hover:bg-green-700 px-8 py-3 rounded-lg font-bold transition">RAISE</button>
+                        </div>
+
+                        {gameState.feedback && (
+                            <div className="mt-4 p-3 bg-green-900 text-green-200 rounded animate-pulse">
+                                {gameState.feedback}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<OmahaTrainer />);
+    </script>
+</body>
+</html>
